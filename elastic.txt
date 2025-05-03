@@ -1,0 +1,178 @@
+# Get All Plans
+GET /plans/_search
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+# Get Plans
+GET /plans/_search
+{
+  "query": {
+    "match": {
+      "_id": "12xvxc345ssdsds-508"
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "match": {
+      "_id": "27283xvx9sdf-507"
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "term": {
+      "_id": "27283xvx9asdff-504-abc"
+    }
+  }
+}
+
+
+GET /plans/_search
+{
+  "query": {
+    "term": {
+      "objectId.keyword": {
+        "value": "12xvxc345ssdsds-508"
+      }
+    }
+  }
+}
+
+# Get Plans children
+GET /plans/_search
+{
+  "query": {
+    "has_parent": {
+      "parent_type": "plan", 
+      "query": {
+        "term":{
+          "_id": "12xvxc345ssdsds-508"
+        }
+      }
+    }
+  }
+}
+
+# Get Parent of planCostShare with copay greater than or equal to 1
+GET /plans/_search
+{
+  "query": {
+    "has_child": {
+      "type": "plancostshare",
+      "query": {
+        "range": {
+          "copay": {
+            "gte": 1500
+          }
+        }
+      }
+    }
+  }
+}
+
+# Get linkedPlanService of Plan
+GET /plans/_search
+{
+  "query": {
+    "bool":{
+      "must":[
+        {
+          "term": {
+            "objectType": {
+              "value": "planservice"
+            }
+          }
+        },
+        {
+          "has_parent": {
+            "parent_type": "plan",
+            "query": {
+              "term":{
+                "_id": "12xvxc345ssdsds-508"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "term": {
+            "join_field.name": "plancostshare"
+          }
+        },
+        {
+          "term": {
+            "planserviceCostShares.objectId": "1234512xvc1314asdfs-503"
+          }
+        }
+      ]
+    }
+  }
+}
+
+GET /plans/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "term": {
+            "join_field": {
+              "value": "plancostshare"
+            }
+          }
+        },
+        {
+          "term": {
+            "objectId.keyword": {
+              "value": "1234vxc2324sdf-501"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+
+# Get linkedPlanService children
+GET /plans/_search
+{
+  "query": {
+    "has_parent": {
+      "parent_type": "linkedPlanService", 
+      "query": {
+        "term": {
+          "_id": "27283xvx9asdff-504"
+        }
+      }
+    }
+  }
+}
+
+POST /plans/_delete_by_query
+{
+  "query": {
+    "match_all": {}
+  }
+}
+
+DELETE /plans/_doc/12xvxc345ssdsds-508
+

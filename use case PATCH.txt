@@ -1,0 +1,29 @@
+{
+    "planCostShares": {
+        "deductible": 2000,
+        "_org": "example.com",
+        "copay": 3000,
+        "objectId": "1234vxc2324sdf-501",
+        "objectType": "membercostshare"
+    },
+    "linkedPlanServices": [
+        {
+            "linkedService": {
+                "_org": "example.com",
+                "objectId": "1234520xvc30asdf-502",
+                "objectType": "service",
+                "name": "Yearly physical"
+            },
+            "planserviceCostShares": {
+                "deductible": 10,
+                "_org": "example.com",
+                "copay": 0,
+                "objectId": "1234512xvc1314asdfs-503-abc",
+                "objectType": "membercostshare"
+            },
+            "_org": "example.com",
+            "objectId": "27283xvx9asdff-504-abc",
+            "objectType": "planservice"
+        }
+    ]
+}
