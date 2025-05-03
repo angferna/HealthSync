@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
 const Ajv = require("ajv");
 const Redis = require("ioredis");
+const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require('google-auth-library');  // Import the google-auth-library
 
 const app = express();
 const port = 3002;
@@ -15,6 +17,9 @@ const redis = new Redis({
 });
 
 app.use(bodyParser.json());
+
+// Initialize Google OAuth2 Client
+const client = new OAuth2Client('775569811341-913kj5dhjqvsbsvt6ao6qk6i40400m4c.apps.googleusercontent.com');  
 
 // JSON Schema for validation
 const schema = {
@@ -83,8 +88,39 @@ const generateEtag = (data) => {
     return hash;
 };
 
+// Middleware for verifying ID tokens with Google IDP
+const verifyGoogleToken = async (req, res, next) => {
+    // Extract the token from the Authorization header
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+    if (!token) {
+        return res.status(403).json({ error: "Authorization token missing" });
+    }
+
+    try {
+        // Verify the ID token using Google's OAuth2Client
+        const ticket = await client.verifyIdToken({
+            idToken: token,
+            audience: '775569811341-913kj5dhjqvsbsvt6ao6qk6i40400m4c.apps.googleusercontent.com',  
+        });
+
+        // Get the payload (user info) from the verified ID token
+        const payload = ticket.getPayload();
+
+        // Attach the payload (user info) to the request object
+        req.user = payload;
+
+        // Continue to the next middleware/route handler
+        next();
+    } catch (error) {
+        return res.status(500).json({
+            error: "Token verification failed",
+            details: error.message,
+        });
+    }
+};
+
 // POST: Create a new plan (Stores in Redis)
-app.post("/v1/plan", async (req, res) => {
+app.post("/v1/plan", verifyGoogleToken, async (req, res) => {
     const data = req.body;
     if (!validate(data)) {
         return res.status(400).json({ error: "Validation failed", details: validate.errors });
@@ -105,8 +141,116 @@ app.post("/v1/plan", async (req, res) => {
     return res.status(201).json({ id: data.objectId, message: "Plan created successfully" });
 });
 
-// GET: Retrieve a plan from Redis
-app.get("/v1/plan/:id", async (req, res) => {
+// PATCH: Update the plan in Redis
+// app.patch("/v1/plan/:id", verifyGoogleToken, async (req, res) => {
+//     const planId = req.params.id;
+//     const data = req.body;
+
+//     // Retrieve the current plan from Redis
+//     const planData = await redis.get(planId);
+
+//     if (!planData) {
+//         return res.status(404).json({ error: "Plan not found" });
+//     }
+
+//     let plan = JSON.parse(planData);
+
+//     // Merge the updated fields into the existing plan
+//     Object.keys(data).forEach((key) => {
+//         if (Array.isArray(data[key]) && Array.isArray(plan[key])) {
+//             // If the field is an array (e.g., linkedPlanServices), merge elements based on objectId
+//             data[key].forEach((updatedItem) => {
+//                 const existingItemIndex = plan[key].findIndex(item => item.objectId === updatedItem.objectId);
+//                 if (existingItemIndex !== -1) {
+//                     // Merge updated fields for existing objects
+//                     plan[key][existingItemIndex] = { ...plan[key][existingItemIndex], ...updatedItem };
+//                 } else {
+//                     // If new object, add it to the array
+//                     plan[key].push(updatedItem);
+//                 }
+//             });
+//         } else {
+//             // Directly update scalar or object fields
+//             plan[key] = data[key];
+//         }
+//     });
+
+//     // Regenerate the ETag for the updated plan
+//     const newEtag = generateEtag(plan);
+//     plan.etag = newEtag;  // Ensure the etag is included in the stored plan
+
+//     // Store the updated plan back in Redis
+//     await redis.set(planId, JSON.stringify(plan));
+
+//     res.set({
+//         "X-Powered-By": "Express",
+//         "Etag": newEtag,
+//         "Content-Type": "application/json",
+//     });
+
+//     return res.status(200).json(plan);
+// });
+
+// PATCH: Update the plan in Redis
+app.patch("/v1/plan/:id", verifyGoogleToken, async (req, res) => {
+    const planId = req.params.id;
+    const data = req.body;
+
+    // Retrieve the current plan from Redis
+    const planData = await redis.get(planId);
+
+    if (!planData) {
+        return res.status(404).json({ error: "Plan not found" });
+    }
+
+    let plan = JSON.parse(planData);
+
+    // Get If-Match ETag from the request header
+    const clientEtag = req.header("If-Match");
+
+    // If ETag does not match, reject the update
+    if (!clientEtag || clientEtag !== plan.etag) {
+        return res.status(412).json({ error: "ETag mismatch. The resource has been modified." });
+    }
+
+    // Merge the updated fields into the existing plan
+    Object.keys(data).forEach((key) => {
+        if (Array.isArray(data[key]) && Array.isArray(plan[key])) {
+            // Merge array elements based on objectId
+            data[key].forEach((updatedItem) => {
+                const existingItemIndex = plan[key].findIndex(item => item.objectId === updatedItem.objectId);
+                if (existingItemIndex !== -1) {
+                    // Merge updated fields for existing objects
+                    plan[key][existingItemIndex] = { ...plan[key][existingItemIndex], ...updatedItem };
+                } else {
+                    // Add new object if not found
+                    plan[key].push(updatedItem);
+                }
+            });
+        } else {
+            // Directly update scalar or object fields
+            plan[key] = data[key];
+        }
+    });
+
+    // Regenerate the ETag for the updated plan
+    const newEtag = generateEtag(plan);
+    plan.etag = newEtag;  // Ensure the etag is included in the stored plan
+
+    // Store the updated plan back in Redis
+    await redis.set(planId, JSON.stringify(plan));
+
+    res.set({
+        "X-Powered-By": "Express",
+        "Etag": newEtag,
+        "Content-Type": "application/json",
+    });
+
+    return res.status(200).json(plan);
+});
+
+
+app.get("/v1/plan/:id", verifyGoogleToken, async (req, res) => {
     const planData = await redis.get(req.params.id);
     
     if (!planData) {
@@ -117,7 +261,7 @@ app.get("/v1/plan/:id", async (req, res) => {
     const clientEtag = req.header("If-None-Match");
 
     if (clientEtag && clientEtag === plan.etag) {
-        return res.status(304).end();
+        return res.status(304).end();  // If the ETag matches, return 304 NOT MODIFIED
     }
 
     res.set({
@@ -126,11 +270,12 @@ app.get("/v1/plan/:id", async (req, res) => {
         "Content-Type": "application/json",
     });
 
-    return res.status(200).json(plan);
+    return res.status(200).json(plan);  // Return the plan with the ETag
 });
 
+
 // DELETE: Remove a plan from Redis
-app.delete("/v1/plan/:id", async (req, res) => {
+app.delete("/v1/plan/:id", verifyGoogleToken, async (req, res) => {
     const planId = req.params.id;
     const deleted = await redis.del(planId);
 
